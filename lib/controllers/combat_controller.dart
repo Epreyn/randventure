@@ -2,13 +2,14 @@ import 'dart:math';
 import 'package:get/get.dart';
 import '../models/card_model.dart';
 import '../models/skill.dart';
+import 'combat_animation_controller.dart';
 
 class CombatController extends GetxController {
   final RxList<CardModel> playerCards = <CardModel>[].obs;
   final RxList<CardModel> enemyCards = <CardModel>[].obs;
   final RxString result = ''.obs;
 
-  /// Indique qu’on est en mode “focus” (animation centrée)
+  /// Indique qu'on est en mode "focus" (animation centrée)
   final RxBool isFocusing = false.obs;
 
   /// Carte qui agit pendant le focus
@@ -179,29 +180,42 @@ class CombatController extends GetxController {
     activeCard.value = actor;
     targetCard.value = target;
 
-    // 2) Laisser le temps à l'UI de centrer les cartes (~600ms)
-    await Future.delayed(const Duration(milliseconds: 600));
+    // Déclencher l'animation de focus
+    final animController = Get.find<CombatAnimationController>();
+    animController.startFocusAnimation();
+
+    // 2) Laisser le temps à l'UI de centrer les cartes (~800ms pour l'animation)
+    await Future.delayed(const Duration(milliseconds: 800));
 
     // 3) Appliquer visuellement la compétence
     _applySkill(actor, target, skill);
+
+    // Petit délai pour visualiser l'effet
+    await Future.delayed(const Duration(milliseconds: 400));
 
     // Si l'ennemi agit en riposte (si différent et toujours vivant)
     if (target != actor && target.isAlive) {
       final enemySkill =
           _random.nextBool() ? target.leftSkill : target.rightSkill;
       _applySkill(target, actor, enemySkill);
+      await Future.delayed(const Duration(milliseconds: 400));
     }
 
     // 4) Fin du focus
+    animController.endFocusAnimation();
+
+    // 5) Attendre la fin de l'animation de retour
+    await Future.delayed(const Duration(milliseconds: 800));
+
     isFocusing.value = false;
     activeCard.value = null;
     targetCard.value = null;
 
-    // 5) Rotation des piles (acteur et ennemi)
+    // 6) Rotation des piles (acteur et ennemi)
     _cycleCard(playerCards);
     _cycleCard(enemyCards);
 
-    // 6) Vérification de fin de combat
+    // 7) Vérification de fin de combat
     if (playerCards.isEmpty) {
       result.value = 'Defeat... You lost!';
     } else if (enemyCards.isEmpty) {
@@ -220,6 +234,19 @@ class CombatController extends GetxController {
   void _cycleCard(RxList<CardModel> list) {
     if (list.isEmpty) return;
     final card = list.removeAt(0);
-    if (card.isAlive) list.add(card);
+    if (card.isAlive) {
+      list.add(card);
+    }
+    // Force refresh de la liste observable
+    list.refresh();
+  }
+
+  /// Remet à zéro la bataille
+  void resetBattle() {
+    result.value = '';
+    isFocusing.value = false;
+    activeCard.value = null;
+    targetCard.value = null;
+    _initializeBattle();
   }
 }
